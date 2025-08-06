@@ -1,9 +1,56 @@
 
 import pandas as pd
 
+
+def cargar_excel(path, columnas_requeridas):
+    """Cargar un archivo Excel y verificar columnas esenciales."""
+    try:
+        df = pd.read_excel(path)
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"Archivo no encontrado: {path}") from e
+    except ValueError as e:
+        raise ValueError(f"Error al leer {path}: {e}") from e
+
+    faltantes = [c for c in columnas_requeridas if c not in df.columns]
+    if faltantes:
+        raise ValueError(
+            f"Faltan columnas esenciales en {path}: {', '.join(faltantes)}"
+        )
+    return df
+
+
+MODULOS_COLUMNAS = [
+    "Referencia",
+    "Colocaciones Permitidas",
+    "PUNTOS BASE",
+    "Tipo",
+    "Descripción",
+    "Ancho (mm)",
+    "Profundo (mm)",
+    "Min S (mm)",
+    "Max S (mm)",
+    "Min A (mm)",
+    "Max A (mm)",
+    "Min C (mm)",
+    "Max C (mm)",
+    "Min X (mm)",
+    "Max X (mm)",
+]
+
+ESPECIALES_COLUMNAS = [
+    "Nombre del especial",
+    "Descripción técnica",
+    "Requiere medidas",
+    "Acciones Técnicas",
+    "Comentarios predefinidos",
+    "Incremento %",
+    "No compatible con",
+]
+
+
 # Cargar los catálogos
-modulos = pd.read_excel("catalogo_modulos_teowin.xlsx")
-especiales = pd.read_excel("especiales_teowin.xlsx").fillna("")
+modulos = cargar_excel("catalogo_modulos_teowin.xlsx", MODULOS_COLUMNAS)
+especiales = cargar_excel("especiales_teowin.xlsx", ESPECIALES_COLUMNAS).fillna("")
 
 # Convertir especiales en diccionario
 especiales_dict = {}
