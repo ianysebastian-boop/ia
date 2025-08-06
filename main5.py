@@ -1,22 +1,40 @@
 
+import argparse
+import logging
 import pandas as pd
 
-# Cargar los catálogos
-modulos = pd.read_excel("catalogo_modulos_teowin.xlsx")
-especiales = pd.read_excel("especiales_teowin.xlsx").fillna("")
+CATALOGO_MODULOS = "catalogo_modulos_teowin.xlsx"
+ESPECIALES = "especiales_teowin.xlsx"
+COLOCACION_NOMBRES = {"S": "A suelo", "A": "Apilable", "C": "Colgado", "X": ""}
 
-# Convertir especiales en diccionario
+modulos = pd.DataFrame()
 especiales_dict = {}
-for _, row in especiales.iterrows():
-    nombre = row["Nombre del especial"].strip().lower().replace("_", " ")
-    especiales_dict[nombre] = {
-        "descripcion": row["Descripción técnica"],
-        "requiere_medidas": [m.strip().lower() for m in str(row["Requiere medidas"]).split(",") if m.strip()],
-        "acciones": row["Acciones Técnicas"],
-        "comentario": row["Comentarios predefinidos"],
-        "incremento": float(row["Incremento %"]) if row["Incremento %"] else 0,
-        "incompatible_con": [i.strip().lower() for i in str(row["No compatible con"]).split(",") if i.strip()]
-    }
+
+
+def cargar_datos(ruta_catalogo, ruta_especiales):
+    global modulos, especiales_dict
+    modulos = pd.read_excel(ruta_catalogo)
+    especiales = pd.read_excel(ruta_especiales).fillna("")
+
+    especiales_dict = {}
+    for _, row in especiales.iterrows():
+        nombre = row["Nombre del especial"].strip().lower().replace("_", " ")
+        especiales_dict[nombre] = {
+            "descripcion": row["Descripción técnica"],
+            "requiere_medidas": [
+                m.strip().lower()
+                for m in str(row["Requiere medidas"]).split(",")
+                if m.strip()
+            ],
+            "acciones": row["Acciones Técnicas"],
+            "comentario": row["Comentarios predefinidos"],
+            "incremento": float(row["Incremento %"]) if row["Incremento %"] else 0,
+            "incompatible_con": [
+                i.strip().lower()
+                for i in str(row["No compatible con"]).split(",")
+                if i.strip()
+            ],
+        }
 
 def analizar_entrada(texto):
     partes = texto.strip().split()
@@ -119,9 +137,7 @@ def analizar_mueble(ref, ancho, alto, profundo, especiales_input):
     if not altura_valida:
         salida.append(f"❌ Altura {alto} mm no válida para ninguna colocación de {ref}")
         return "\n".join(salida)
-  # Mapear la colocación a su nombre completo
-    colocacion_nombres = {"S": "A suelo", "A": "Apilable", "C": "Colgado", "X": ""}
-    colocacion_legible = colocacion_nombres.get(colocacion_usada, colocacion_usada)
+    colocacion_legible = COLOCACION_NOMBRES.get(colocacion_usada, colocacion_usada)
     
     descripcion = mueble.get("Descripción", "").strip()
     salida.append(f"✅ {descripcion} ({ref}) {colocacion_legible} con altura {alto} mm")
@@ -166,10 +182,44 @@ def analizar_mueble(ref, ancho, alto, profundo, especiales_input):
     return "\n".join(salida)
 
 def main():
-    print("🛠️ Validador TEOWIN (versión automática sin input)")
-    print("Ejemplo entrada: D1000 180/600/500 encaje columna")
-    print("Orden de medidas: alto/ancho/profundo")
-    print("Escribe 'salir' para terminar.\n")
+    parser = argparse.ArgumentParser(description="Validador TEOWIN")
+    parser.add_argument(
+        "--catalogo-modulos",
+        default=CATALOGO_MODULOS,
+        help="Ruta del catálogo de módulos",
+    )
+    parser.add_argument(
+        "--especiales",
+        default=ESPECIALES,
+        help="Ruta del catálogo de especiales",
+    )
+    parser.add_argument(
+        "--idioma",
+        default="es",
+        choices=["es", "en"],
+        help="Idioma de los mensajes",
+    )
+    parser.add_argument(
+        "--log-level",
+        default="INFO",
+        help="Nivel de logging (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    )
+    args = parser.parse_args()
+
+    logging.basicConfig(level=getattr(logging, args.log_level.upper(), logging.INFO))
+
+    cargar_datos(args.catalogo_modulos, args.especiales)
+
+    if args.idioma == "en":
+        print("🛠️ TEOWIN Validator (automatic version without input)")
+        print("Example entry: D1000 180/600/500 encaje columna")
+        print("Order of dimensions: height/width/depth")
+        print("Type 'salir' to finish.\n")
+    else:
+        print("🛠️ Validador TEOWIN (versión automática sin input)")
+        print("Ejemplo entrada: D1000 180/600/500 encaje columna")
+        print("Orden de medidas: alto/ancho/profundo")
+        print("Escribe 'salir' para terminar.\n")
 
     while True:
         entrada = input("🔍 Entrada: ").strip()
@@ -177,7 +227,10 @@ def main():
             break
         ref, ancho, alto, profundo, especiales_input = analizar_entrada(entrada)
         if not all([ref, ancho, alto, profundo]):
-            print("❌ Entrada no válida. Usa: referencia alto/ancho/profundo especiales")
+            if args.idioma == "en":
+                print("❌ Invalid entry. Use: reference height/width/depth specials")
+            else:
+                print("❌ Entrada no válida. Usa: referencia alto/ancho/profundo especiales")
             continue
         resultado = analizar_mueble(ref, ancho, alto, profundo, especiales_input)
         print("\n--- Resultado ---")
