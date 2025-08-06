@@ -1,5 +1,6 @@
 
 import pandas as pd
+from typing import Dict, List, Optional, Tuple
 
 # Cargar los catálogos
 modulos = pd.read_excel("catalogo_modulos_teowin.xlsx")
@@ -18,25 +19,35 @@ for _, row in especiales.iterrows():
         "incompatible_con": [i.strip().lower() for i in str(row["No compatible con"]).split(",") if i.strip()]
     }
 
-def analizar_entrada(texto):
+def analizar_entrada(texto: str) -> Tuple[Optional[str], Optional[int], Optional[int], Optional[int], List[str]]:
+    """Extrae la referencia, medidas y especiales de una entrada de texto.
+
+    Args:
+        texto: Cadena con el formato "referencia alto/ancho/profundo [especiales]".
+
+    Returns:
+        Una tupla con la referencia, ancho, alto, profundo y una lista de
+        especiales detectados. Los valores numéricos o la referencia pueden ser
+        ``None`` si la entrada es inválida.
+    """
     partes = texto.strip().split()
     if len(partes) < 2:
-        return None, None, None, []
+        return None, None, None, None, []
 
     referencia = partes[0].strip()
     medidas = partes[1].strip()
     dimensiones = medidas.split("/")
     if len(dimensiones) != 3:
-        return referencia, None, None, []
+        return referencia, None, None, None, []
 
     try:
         alto = int(dimensiones[0])
         ancho = int(dimensiones[1])
         profundo = int(dimensiones[2])
     except ValueError:
-        return referencia, None, None, []
+        return referencia, None, None, None, []
 
-    especiales_input = []
+    especiales_input: List[str] = []
     i = 2
     while i < len(partes):
         palabra = partes[i].strip().lower()
@@ -51,34 +62,61 @@ def analizar_entrada(texto):
     return referencia, ancho, alto, profundo, especiales_input
 
 
-def obtener_mueble(ref):
+def obtener_mueble(ref: str) -> Optional[pd.Series]:
+    """Busca un mueble en el catálogo por su referencia.
+
+    Args:
+        ref: Referencia del módulo a buscar.
+
+    Returns:
+        La fila del catálogo correspondiente al módulo o ``None`` si no se
+        encuentra.
+    """
     coincidencias = modulos[modulos["Referencia"].str.lower() == ref.lower()]
     if coincidencias.empty:
         return None
     return coincidencias.iloc[0]
 
-def procesar_especial(nombre, medidas, colocacion_usada, tipo_mueble):
-    salida = []
-    incremento_total = 0
+def procesar_especial(
+    nombre: str,
+    medidas: Dict[str, int],
+    colocacion_usada: Optional[str],
+    tipo_mueble: Optional[str],
+) -> Tuple[List[str], float]:
+    """Evalúa un especial y calcula su incremento.
+
+    Args:
+        nombre: Nombre del especial a procesar.
+        medidas: Diccionario con las medidas disponibles del mueble.
+        colocacion_usada: Clave de la colocación detectada en el mueble.
+        tipo_mueble: Tipo de mueble al que pertenece la referencia.
+
+    Returns:
+        Una lista de mensajes generados y el incremento porcentual acumulado.
+    """
+    salida: List[str] = []
+    incremento_total = 0.0
 
     regla = especiales_dict.get(nombre)
     if not regla:
         salida.append(f"❌ Especial '{nombre}' no encontrado.")
-        return salida, 0
+        return salida, 0.0
 
     if colocacion_usada and colocacion_usada.lower() in regla["incompatible_con"]:
         salida.append(f"❌ Especial '{nombre}' incompatible con colocación '{colocacion_usada}'.")
-        return salida, 0
+        return salida, 0.0
     if tipo_mueble and tipo_mueble.lower() in regla["incompatible_con"]:
         salida.append(f"❌ Especial '{nombre}' incompatible con tipo de mueble '{tipo_mueble}'.")
-        return salida, 0
+        return salida, 0.0
 
     acciones = regla["acciones"]
     for key in regla["requiere_medidas"]:
         valor = medidas.get(key)
         if valor is None:
-            salida.append(f"❗ Especial '{nombre}' requiere medida '{key}' que no se proporcionó.")
-            return salida, 0
+            salida.append(
+                f"❗ Especial '{nombre}' requiere medida '{key}' que no se proporcionó."
+            )
+            return salida, 0.0
         acciones = acciones.replace(f"{{{key}}}", str(valor))
 
     salida.append(f"✅ Especial '{nombre}': {acciones}")
@@ -88,19 +126,34 @@ def procesar_especial(nombre, medidas, colocacion_usada, tipo_mueble):
 
     return salida, incremento_total
 
-def analizar_mueble(ref, ancho, alto, profundo, especiales_input):
+def analizar_mueble(
+    ref: str, ancho: int, alto: int, profundo: int, especiales_input: List[str]
+) -> str:
+    """Analiza un mueble con sus medidas y especiales asociados.
+
+    Args:
+        ref: Referencia del mueble a validar.
+        ancho: Ancho introducido en milímetros.
+        alto: Alto introducido en milímetros.
+        profundo: Profundidad introducida en milímetros.
+        especiales_input: Lista de especiales indicados por el usuario.
+
+    Returns:
+        Un texto descriptivo con el resultado del análisis y los puntos
+        calculados.
+    """
     mueble = obtener_mueble(ref)
     if mueble is None:
         return f"❌ Referencia '{ref}' no encontrada."
 
-    salida = []
-    incremento_total = 0
+    salida: List[str] = []
+    incremento_total = 0.0
     colocaciones = str(mueble.get("Colocaciones Permitidas", "")).split(",")
     puntos_base = mueble.get("PUNTOS BASE", 0)
     base = float(puntos_base) if pd.notna(puntos_base) else 0
     tipo_mueble = str(mueble.get("Tipo", "")).lower()
 
-    colocacion_usada = None
+    colocacion_usada: Optional[str] = None
     altura_valida = False
     for coloc in ["S", "A", "C", "X"]:
         if coloc in colocaciones:
@@ -119,10 +172,11 @@ def analizar_mueble(ref, ancho, alto, profundo, especiales_input):
     if not altura_valida:
         salida.append(f"❌ Altura {alto} mm no válida para ninguna colocación de {ref}")
         return "\n".join(salida)
-  # Mapear la colocación a su nombre completo
+
+    # Mapear la colocación a su nombre completo
     colocacion_nombres = {"S": "A suelo", "A": "Apilable", "C": "Colgado", "X": ""}
     colocacion_legible = colocacion_nombres.get(colocacion_usada, colocacion_usada)
-    
+
     descripcion = mueble.get("Descripción", "").strip()
     salida.append(f"✅ {descripcion} ({ref}) {colocacion_legible} con altura {alto} mm")
     salida.append(f"🔢 Puntos base: {base:.2f}")
@@ -141,7 +195,7 @@ def analizar_mueble(ref, ancho, alto, profundo, especiales_input):
         "alto": alto,
         "ancho": ancho,
         "profundo": profundo,
-        "fondo": profundo
+        "fondo": profundo,
     }
 
     # Procesar especiales
@@ -152,7 +206,9 @@ def analizar_mueble(ref, ancho, alto, profundo, especiales_input):
             continue
         ya_procesados.add(nombre)
 
-        resultados, inc = procesar_especial(nombre, medidas_disponibles, colocacion_usada, tipo_mueble)
+        resultados, inc = procesar_especial(
+            nombre, medidas_disponibles, colocacion_usada, tipo_mueble
+        )
         salida.extend(resultados)
         incremento_total += inc
 
@@ -165,7 +221,8 @@ def analizar_mueble(ref, ancho, alto, profundo, especiales_input):
 
     return "\n".join(salida)
 
-def main():
+def main() -> None:
+    """Ejecuta el validador en modo interactivo por consola."""
     print("🛠️ Validador TEOWIN (versión automática sin input)")
     print("Ejemplo entrada: D1000 180/600/500 encaje columna")
     print("Orden de medidas: alto/ancho/profundo")
